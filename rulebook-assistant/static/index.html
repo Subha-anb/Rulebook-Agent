@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rulebook Assistant</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1f2328; --muted: #646b73;
+    --line: #dfe1e4; --accent: #1f3864; --accent-text: #ffffff; --soft: #eef1f6;
+    --warn-bg: #fdf3dc; --warn-text: #6b4e00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17191c; --panel: #202328; --text: #e6e8ea; --muted: #9aa1a9;
+      --line: #363a40; --accent: #8fb0e8; --accent-text: #10141a; --soft: #2a2f37;
+      --warn-bg: #3a3018; --warn-text: #f0d48c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: grid; grid-template-columns: 280px 1fr;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--line);
+    padding: 20px; overflow-y: auto;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 12px; margin: 22px 0 8px; color: var(--muted); font-weight: 600; }
+  aside p { margin: 0; color: var(--muted); font-size: 13px; }
+  aside ul { list-style: none; margin: 0; padding: 0; }
+  aside li { padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  aside li small { display: block; color: var(--muted); font-size: 12px; }
+  .warning { color: var(--warn-text); background: var(--warn-bg); padding: 6px 8px;
+    border-radius: 6px; font-size: 12px; margin-top: 8px; }
+  main { display: flex; flex-direction: column; min-height: 0; }
+  .rules { background: var(--warn-bg); color: var(--warn-text); font-size: 13px; padding: 8px 24px; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px; }
+  .turn { max-width: 760px; margin: 0 auto 22px; }
+  .question { font-weight: 600; margin-bottom: 6px; white-space: pre-wrap; }
+  .answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer sup { color: var(--accent); font-weight: 700; padding: 0 1px; }
+  .sources { margin: 12px 0 0; padding: 0; list-style: none; }
+  .sources li { background: var(--soft); border-radius: 6px; padding: 8px 10px;
+    margin-bottom: 6px; font-size: 13px; overflow-wrap: anywhere; }
+  .sources b { display: block; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .notice { color: var(--warn-text); background: var(--warn-bg); border-radius: 6px;
+    padding: 8px 10px; margin-top: 8px; font-size: 13px; }
+  #empty { max-width: 760px; margin: 8vh auto 0; }
+  #empty button { display: block; width: 100%; text-align: left; margin-bottom: 8px; padding: 10px 12px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; font: inherit; cursor: pointer; }
+  #empty button:hover { border-color: var(--accent); }
+  form { display: flex; gap: 8px; padding: 14px 24px; background: var(--panel);
+    border-top: 1px solid var(--line); }
+  textarea { flex: 1; resize: none; height: 46px; padding: 10px 12px; font: inherit;
+    color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  form button { padding: 0 18px; font: inherit; font-weight: 600; border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  form button:disabled { opacity: .5; cursor: default; }
+  #new-chat { margin-top: 18px; width: 100%; padding: 8px; font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    #chat, .rules, form { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Rulebook Assistant</h1>
+  <p>Answers from the cached document pack, with the exact source.</p>
+  <h2>DOCUMENT PACK</h2>
+  <ul id="docs"></ul>
+  <p id="pack-id"></p>
+  <div id="warnings"></div>
+  <button id="new-chat" type="button">New conversation</button>
+</aside>
+<main>
+  <div class="rules">Do not enter member health information (INT-01). A named person must approve any answer before use (INT-02).</div>
+  <div id="chat">
+    <div id="empty">
+      <button type="button">What is our fallback position on limitation of liability, and who approves anything outside it?</button>
+      <button type="button">Which Kansas assets need a written release before we can reuse them?</button>
+      <button type="button">Does our staffing cover the usability testing the RFP requires?</button>
+    </div>
+  </div>
+  <form id="ask">
+    <textarea id="question" placeholder="Ask about the rulebook" aria-label="Your question" maxlength="4000"></textarea>
+    <button id="send" type="submit">Ask</button>
+  </form>
+</main>
+<script>
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("question");
+  const send = document.getElementById("send");
+  const empty = document.getElementById("empty");
+  let conversationId = null;
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  async function loadPack() {
+    const pack = await (await fetch("/api/pack")).json();
+    const list = document.getElementById("docs");
+    for (const doc of pack.documents) {
+      const item = el("li", "", doc.title);
+      item.append(el("small", "", `Revised ${doc.revised.toLowerCase()}`));
+      list.append(item);
+    }
+    document.getElementById("pack-id").textContent = `Pack ${pack.pack_id}`;
+    for (const warning of pack.warnings) {
+      document.getElementById("warnings").append(el("div", "warning", warning));
+    }
+  }
+
+  function renderDone(turn, event) {
+    const hit = event.cache_read_tokens > 0;
+    const cache = hit
+      ? `cache hit, ${event.cache_read_tokens.toLocaleString()} tokens read`
+      : `cache written, ${event.cache_write_tokens.toLocaleString()} tokens`;
+    turn.append(el("div", "meta", `${event.model} · ${cache} · pack ${event.pack_id}`));
+  }
+
+  function handle(event, turn, answer, sources) {
+    if (event.type === "conversation") {
+      conversationId = event.id;
+    } else if (event.type === "text") {
+      answer.append(document.createTextNode(event.text));
+    } else if (event.type === "citation") {
+      answer.append(el("sup", "", event.n));
+      if (!sources.querySelector(`[data-n="${event.n}"]`)) {
+        const item = el("li");
+        item.dataset.n = event.n;
+        item.append(el("b", "", `${event.n}. ${event.document}`), event.text);
+        sources.append(item);
+      }
+    } else if (event.type === "notice" || event.type === "error") {
+      turn.append(el("div", "notice", event.text || event.message));
+    } else if (event.type === "done") {
+      renderDone(turn, event);
+    }
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  async function ask(question) {
+    empty.remove();
+    send.disabled = true;
+    const turn = el("div", "turn");
+    const answer = el("div", "answer");
+    const sources = el("ul", "sources");
+    turn.append(el("div", "question", question), answer, sources);
+    chat.append(turn);
+    chat.scrollTop = chat.scrollHeight;
+
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, conversation_id: conversationId }),
+      });
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body.error);
+      }
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop();
+        for (const chunk of chunks) {
+          if (chunk.startsWith("data: ")) {
+            handle(JSON.parse(chunk.slice(6)), turn, answer, sources);
+          }
+        }
+      }
+    } catch (error) {
+      turn.append(el("div", "notice", error.message));
+    }
+    send.disabled = false;
+    input.focus();
+  }
+
+  document.getElementById("ask").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const question = input.value.trim();
+    if (!question || send.disabled) return;
+    input.value = "";
+    ask(question);
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      document.getElementById("ask").requestSubmit();
+    }
+  });
+  for (const button of empty.querySelectorAll("button")) {
+    button.addEventListener("click", () => ask(button.textContent));
+  }
+  document.getElementById("new-chat").addEventListener("click", () => {
+    conversationId = null;
+    chat.replaceChildren();
+    input.focus();
+  });
+  loadPack();
+</script>
+</body>
+</html>
